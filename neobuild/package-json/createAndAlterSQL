@@ -1,0 +1,87 @@
+-- RE-APPLYING RLS POLICIES TO FIX DELETE/UPDATE PERMISSIONS
+
+-- 1. Ensure Admin Helper Function is Secure and Correct
+CREATE OR REPLACE FUNCTION public.is_admin() RETURNS BOOLEAN AS $$
+BEGIN 
+  RETURN EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'); 
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 2. ATTENDANCE LOGS POLICIES
+-- Drop potentially conflicting or restrictive policies
+DROP POLICY IF EXISTS "Admin manage logs" ON attendance_logs;
+DROP POLICY IF EXISTS "Employees can view own logs" ON attendance_logs;
+DROP POLICY IF EXISTS "Employees can insert own logs" ON attendance_logs;
+DROP POLICY IF EXISTS "Employees can update own logs" ON attendance_logs;
+DROP POLICY IF EXISTS "Manage own logs" ON attendance_logs;
+DROP POLICY IF EXISTS "View attendance logs" ON attendance_logs;
+DROP POLICY IF EXISTS "Insert own logs" ON attendance_logs;
+DROP POLICY IF EXISTS "Update own logs" ON attendance_logs;
+
+-- Re-create with explicit Admin ALL permissions
+CREATE POLICY "Admin All Logs" ON attendance_logs FOR ALL USING (is_admin());
+
+CREATE POLICY "Employee View Own Logs" ON attendance_logs FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Employee Insert Own Logs" ON attendance_logs FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Employee Update Own Logs" ON attendance_logs FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Employee Delete Own Logs" ON attendance_logs FOR DELETE USING (auth.uid() = user_id);
+
+-- 3. ENQUIRY ITEMS POLICIES
+DROP POLICY IF EXISTS "Admin manage enquiry items" ON enquiry_items;
+DROP POLICY IF EXISTS "Manage own enquiry items" ON enquiry_items;
+DROP POLICY IF EXISTS "Users can view own enquiry items" ON enquiry_items;
+DROP POLICY IF EXISTS "Users can insert own enquiry items" ON enquiry_items;
+DROP POLICY IF EXISTS "Users can update own enquiry items" ON enquiry_items;
+DROP POLICY IF EXISTS "Users can delete own enquiry items" ON enquiry_items;
+
+CREATE POLICY "Admin All Enquiry Items" ON enquiry_items FOR ALL USING (is_admin());
+
+CREATE POLICY "Employee Manage Own Enquiry Items" ON enquiry_items FOR ALL USING (
+  EXISTS (SELECT 1 FROM attendance_logs WHERE id = visit_id AND user_id = auth.uid())
+);
+
+-- 4. QUOTES POLICIES
+DROP POLICY IF EXISTS "Admin manage quotes" ON quotes;
+DROP POLICY IF EXISTS "Manage own quotes" ON quotes;
+DROP POLICY IF EXISTS "Admins can manage quotes" ON quotes;
+DROP POLICY IF EXISTS "Employees can view own visit quotes" ON quotes;
+
+CREATE POLICY "Admin All Quotes" ON quotes FOR ALL USING (is_admin());
+
+CREATE POLICY "Employee Manage Own Quotes" ON quotes FOR ALL USING (
+   created_by = auth.uid() OR 
+   EXISTS (SELECT 1 FROM attendance_logs WHERE id = visit_id AND user_id = auth.uid())
+);
+
+-- 5. QUOTE ITEMS POLICIES
+DROP POLICY IF EXISTS "Admin manage quote items" ON quote_items;
+DROP POLICY IF EXISTS "Manage own quote items" ON quote_items;
+DROP POLICY IF EXISTS "Admins can manage quote items" ON quote_items;
+DROP POLICY IF EXISTS "Employees can view own quote items" ON quote_items;
+
+CREATE POLICY "Admin All Quote Items" ON quote_items FOR ALL USING (is_admin());
+
+CREATE POLICY "Employee Manage Own Quote Items" ON quote_items FOR ALL USING (
+   EXISTS (
+     SELECT 1 FROM quotes 
+     JOIN attendance_logs ON quotes.visit_id = attendance_logs.id 
+     WHERE quotes.id = quote_items.quote_id AND (quotes.created_by = auth.uid() OR attendance_logs.user_id = auth.uid())
+   )
+);
+
+-- 6. PRODUCTS POLICIES
+DROP POLICY IF EXISTS "Admin manage products" ON products;
+DROP POLICY IF EXISTS "Allow write access to admins only" ON products;
+
+CREATE POLICY "Admin All Products" ON products FOR ALL USING (is_admin());
+-- Ensure read policy exists if not already
+-- CREATE POLICY "Allow read access to all authenticated users" ON products FOR SELECT USING (auth.role() = 'authenticated');
+
+-- 7. PROFILES POLICIES
+DROP POLICY IF EXISTS "Admin manage profiles" ON profiles;
+DROP POLICY IF EXISTS "Admins can view all profiles" ON profiles;
+DROP POLICY IF EXISTS "View profiles" ON profiles;
+
+CREATE POLICY "Admin All Profiles" ON profiles FOR ALL USING (is_admin());
+CREATE POLICY "User View Own Profile" ON profiles FOR SELECT USING (auth.uid() = id);
+CREATE POLICY "User Update Own Profile" ON profiles FOR UPDATE USING (auth.uid() = id);

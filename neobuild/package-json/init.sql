@@ -1,0 +1,1 @@
+-- Init SQL included in createAndAlterSQL for this response as it handles IF NOT EXISTS

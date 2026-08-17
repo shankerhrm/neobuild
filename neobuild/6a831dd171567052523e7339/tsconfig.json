@@ -1,0 +1,1 @@
+{"compilerOptions":{"noUnusedLocals":false,"noUnusedParameters":false,"skipLibCheck":true,"allowJs":true,"baseUrl":".","jsx":"react-jsx","noEmit":true,"types":["react","react-dom"]},"references":[{"path":"./tsconfig.node.json"}],"include":["src"]}
